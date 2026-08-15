@@ -1,11 +1,11 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-<head>
-<meta charset="utf-8">
+  <head>
+    <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>会費管理</title>
-<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
-<style>
+    <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+    <style>
   :root {
     color-scheme: light;
   }
@@ -64,7 +64,7 @@
     margin: 0;
     font-size: 20px;
     font-weight: 700;
-    color: #06c755;
+    color: #c6b11f;
   }
   .app-title-sub {
     margin: 2px 0 0;
@@ -82,17 +82,23 @@
     margin: 0;
   }
   .icon-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     margin-top: 0;
     width: 32px;
     height: 32px;
     padding: 0;
-    font-size: 18px;
-    line-height: 1;
     color: #444;
     background: #fff;
     border: 1px solid #ddd;
     border-radius: 50%;
     box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .icon-button svg {
+    display: block;
+    width: 20px;
+    height: 20px;
   }
   .icon-button:disabled { opacity: 0.5; }
   .icon-button.spinning {
@@ -244,94 +250,126 @@
     background: #f0f0f0;
   }
 </style>
-</head>
-<body>
+  </head>
+  <body>
+    <div id="loading"><span class="spinner"></span>読み込み中...</div>
+    <pre
+      id="debugPanel"
+      class="hidden"
+      style="
+        white-space: pre-wrap;
+        font-size: 11px;
+        color: #555;
+        background: #eee;
+        padding: 8px;
+        border-radius: 6px;
+        margin-top: 8px;
+      "
+    ></pre>
 
-<div id="loading"><span class="spinner"></span>読み込み中...</div>
-<pre id="debugPanel" class="hidden" style="white-space:pre-wrap;font-size:11px;color:#555;background:#eee;padding:8px;border-radius:6px;margin-top:8px;"></pre>
+    <div id="app" class="hidden">
+      <div class="app-title">
+        <p class="app-title-main">FORZA名古屋</p>
+        <p class="app-title-sub">~ 君の会費がチームを強くする ~</p>
+      </div>
 
-<div id="app" class="hidden">
-  <div class="app-title">
-    <p class="app-title-main">Forza名古屋</p>
-    <p class="app-title-sub">~君の会費がチームを強くする~</p>
-  </div>
+      <header>
+        <h1 id="memberName"></h1>
+        <button
+          id="reloadBtn"
+          type="button"
+          class="icon-button"
+          title="更新"
+          aria-label="更新"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M17.65,6.35C16.2,4.9,14.21,4,12,4c-4.42,0-7.99,3.58-7.99,8s3.57,8,7.99,8c3.73,0,6.84-2.55,7.73-6h-2.08c-0.82,2.33-3.04,4-5.65,4c-3.31,0-6-2.69-6-6s2.69-6,6-6c1.66,0,3.14,0.69,4.22,1.78L13,11h7V4L17.65,6.35z"
+            />
+          </svg>
+        </button>
+      </header>
 
-  <header>
-    <h1 id="memberName"></h1>
-    <button id="reloadBtn" type="button" class="icon-button" title="更新" aria-label="更新">⟳</button>
-  </header>
+      <section class="card">
+        <div class="balance-row">
+          <span class="balance-label">チャージ残高</span>
+          <span id="approvedBalance" class="balance-value">-</span>
+        </div>
+        <div class="balance-row sub">
+          <span class="balance-label">承認待ち</span>
+          <span id="pendingAmount" class="balance-value">-</span>
+        </div>
+      </section>
 
-  <section class="card">
-    <div class="balance-row">
-      <span class="balance-label">承認済み残高</span>
-      <span id="approvedBalance" class="balance-value">-</span>
+      <section class="card">
+        <h2>チャージ登録</h2>
+        <form id="chargeForm">
+          <label
+            >金額(円)<input type="number" id="amount" min="1" step="1" required
+          /></label>
+          <label>振込日<input type="date" id="targetDate" required /></label>
+          <label
+            >メモ(任意)<input type="text" id="memo" maxlength="100"
+          /></label>
+          <button type="submit">登録する</button>
+        </form>
+        <p id="formError" class="error hidden"></p>
+      </section>
+
+      <section class="card">
+        <h2>履歴</h2>
+        <ul id="historyList" class="history-list"></ul>
+      </section>
     </div>
-    <div class="balance-row sub">
-      <span class="balance-label">承認待ち</span>
-      <span id="pendingAmount" class="balance-value">-</span>
+
+    <div id="confirmModal" class="modal-overlay hidden">
+      <div class="modal-box">
+        <p id="confirmMessage"></p>
+        <div class="modal-actions">
+          <button type="button" id="confirmCancelBtn" class="secondary">
+            キャンセル
+          </button>
+          <button type="button" id="confirmOkBtn">削除する</button>
+        </div>
+      </div>
     </div>
-  </section>
 
-  <section class="card">
-    <h2>チャージ登録</h2>
-    <form id="chargeForm">
-      <label>金額(円)<input type="number" id="amount" min="1" step="1" required></label>
-      <label>振込日<input type="date" id="targetDate" required></label>
-      <label>メモ(任意)<input type="text" id="memo" maxlength="100"></label>
-      <button type="submit">登録する</button>
-    </form>
-    <p id="formError" class="error hidden"></p>
-  </section>
-
-  <section class="card">
-    <h2>履歴</h2>
-    <ul id="historyList" class="history-list"></ul>
-  </section>
-</div>
-
-<div id="confirmModal" class="modal-overlay hidden">
-  <div class="modal-box">
-    <p id="confirmMessage"></p>
-    <div class="modal-actions">
-      <button type="button" id="confirmCancelBtn" class="secondary">キャンセル</button>
-      <button type="button" id="confirmOkBtn">削除する</button>
-    </div>
-  </div>
-</div>
-
-<script>
-  const LIFF_ID = '2011040592-nyeLFIAW';
-  // 通常時は画面にログを表示しない。?debug=1 を付けた時だけ debugPanel を表示する。
-  const DEBUG_MODE = location.search.indexOf('debug=1') !== -1;
-  (function () {
-    try {
-      if (location.search.indexOf('resetlog=1') !== -1) {
-        localStorage.removeItem('kaihi_debug_log');
-      }
-    } catch (e) {
-      // localStorageが使えない場合は無視する
-    }
-    // JavaScript.html側のdebugLogがまだ定義されていないため、同じlocalStorageキーに直接追記する。
-    var message =
-      'Index.html inline script executed. LIFF_ID=' +
-      (LIFF_ID ? LIFF_ID.substring(0, 6) + '...' : '(empty)') +
-      ', typeof liff=' +
-      typeof liff;
-    var line = '[' + new Date().toISOString().substr(11, 8) + '] ' + message;
-    try {
-      var history = (localStorage.getItem('kaihi_debug_log') || '') + line + '\n';
-      localStorage.setItem('kaihi_debug_log', history);
-      var p = document.getElementById('debugPanel');
-      if (p) {
-        p.textContent = history;
-        if (DEBUG_MODE) p.classList.remove('hidden');
-      }
-    } catch (e) {
-      // localStorageが使えない場合は無視する
-    }
-  })();
-</script>
-<script>
+    <script>
+      const LIFF_ID = '2011040592-nyeLFIAW';
+      // 通常時は画面にログを表示しない。?debug=1 を付けた時だけ debugPanel を表示する。
+      const DEBUG_MODE = location.search.indexOf("debug=1") !== -1;
+      (function () {
+        try {
+          if (location.search.indexOf("resetlog=1") !== -1) {
+            localStorage.removeItem("kaihi_debug_log");
+          }
+        } catch (e) {
+          // localStorageが使えない場合は無視する
+        }
+        // JavaScript.html側のdebugLogがまだ定義されていないため、同じlocalStorageキーに直接追記する。
+        var message =
+          "Index.html inline script executed. LIFF_ID=" +
+          (LIFF_ID ? LIFF_ID.substring(0, 6) + "..." : "(empty)") +
+          ", typeof liff=" +
+          typeof liff;
+        var line =
+          "[" + new Date().toISOString().substr(11, 8) + "] " + message;
+        try {
+          var history =
+            (localStorage.getItem("kaihi_debug_log") || "") + line + "\n";
+          localStorage.setItem("kaihi_debug_log", history);
+          var p = document.getElementById("debugPanel");
+          if (p) {
+            p.textContent = history;
+            if (DEBUG_MODE) p.classList.remove("hidden");
+          }
+        } catch (e) {
+          // localStorageが使えない場合は無視する
+        }
+      })();
+    </script>
+    <script>
   const API_BASE = 'https://script.google.com/macros/s/AKfycbzPU8Hxi_m26sx_QqzV8Ovyv0Y0rwRqsPeRVIb2n1s4DA2i-I9t_f6Ak9peokiGzMkoLw/exec';
 
   let lineUserId = null;
@@ -646,5 +684,5 @@
     }
   }, 8000);
 </script>
-</body>
+  </body>
 </html>
