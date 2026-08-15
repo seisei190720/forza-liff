@@ -23,9 +23,65 @@
     padding: 40px 0;
     color: #666;
   }
+  .spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    margin-right: 6px;
+    border: 2px solid rgba(0,0,0,0.15);
+    border-top-color: #06c755;
+    border-radius: 50%;
+    vertical-align: middle;
+    animation: spin 0.6s linear infinite;
+  }
+  #loading .spinner {
+    display: block;
+    width: 24px;
+    height: 24px;
+    margin: 0 auto 12px;
+    border-width: 3px;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+  .loading-text {
+    color: #999 !important;
+    font-weight: 400 !important;
+  }
+  .loading-item {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #999;
+    font-size: 13px;
+    padding: 16px 0;
+  }
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
   header h1 {
     font-size: 18px;
-    margin: 0 0 12px;
+    margin: 0;
+  }
+  .icon-button {
+    margin-top: 0;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    font-size: 18px;
+    line-height: 1;
+    color: #444;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .icon-button:disabled { opacity: 0.5; }
+  .icon-button.spinning {
+    animation: spin 0.6s linear infinite;
   }
   .card {
     background: #fff;
@@ -67,6 +123,13 @@
     padding: 8px 10px;
     border: 1px solid #ddd;
     border-radius: 8px;
+    background: #fff;
+    color: #1c1c1e;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  input[type="date"]::-webkit-date-and-time-value {
+    text-align: left;
   }
   button {
     margin-top: 4px;
@@ -121,16 +184,56 @@
   }
   .history-status.approved { background: #06c755; }
   .empty { color: #999; font-size: 13px; text-align: center; padding: 12px 0; }
+
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    z-index: 100;
+  }
+  .modal-box {
+    background: #fff;
+    border-radius: 12px;
+    padding: 20px;
+    max-width: 320px;
+    width: 100%;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+  }
+  .modal-box p {
+    margin: 0 0 16px;
+    font-size: 14px;
+    color: #1c1c1e;
+  }
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+  .modal-actions button {
+    margin-top: 0;
+    width: auto;
+    padding: 8px 14px;
+    font-size: 14px;
+  }
+  .modal-actions button.secondary {
+    color: #444;
+    background: #f0f0f0;
+  }
 </style>
 </head>
 <body>
 
-<div id="loading">読み込み中...</div>
-<pre id="debugPanel" style="white-space:pre-wrap;font-size:11px;color:#555;background:#eee;padding:8px;border-radius:6px;margin-top:8px;"></pre>
+<div id="loading"><span class="spinner"></span>読み込み中...</div>
+<pre id="debugPanel" class="hidden" style="white-space:pre-wrap;font-size:11px;color:#555;background:#eee;padding:8px;border-radius:6px;margin-top:8px;"></pre>
 
 <div id="app" class="hidden">
   <header>
     <h1 id="memberName"></h1>
+    <button id="reloadBtn" type="button" class="icon-button" title="更新" aria-label="更新">⟳</button>
   </header>
 
   <section class="card">
@@ -161,16 +264,55 @@
   </section>
 </div>
 
+<div id="confirmModal" class="modal-overlay hidden">
+  <div class="modal-box">
+    <p id="confirmMessage"></p>
+    <div class="modal-actions">
+      <button type="button" id="confirmCancelBtn" class="secondary">キャンセル</button>
+      <button type="button" id="confirmOkBtn">削除する</button>
+    </div>
+  </div>
+</div>
+
 <script>
-  // GASはHTMLをGoogle独自のサンドボックスiframe経由でしか配信できず、
-  // LIFFが内部で行うトップレベル遷移がそのサンドボックスに阻まれて liff.init() が
-  // 完了しない(読み込み中のまま固まる)ため、画面(このファイル)はGitHub Pagesなど
-  // GAS外の静的ホスティングに置き、GASはJSON API(?action=...)専用として使う。
   const LIFF_ID = '2011040592-nyeLFIAW';
+  // 通常時は画面にログを表示しない。?debug=1 を付けた時だけ debugPanel を表示する。
+  const DEBUG_MODE = location.search.indexOf('debug=1') !== -1;
+  (function () {
+    try {
+      if (location.search.indexOf('resetlog=1') !== -1) {
+        localStorage.removeItem('kaihi_debug_log');
+      }
+    } catch (e) {
+      // localStorageが使えない場合は無視する
+    }
+    // JavaScript.html側のdebugLogがまだ定義されていないため、同じlocalStorageキーに直接追記する。
+    var message =
+      'Index.html inline script executed. LIFF_ID=' +
+      (LIFF_ID ? LIFF_ID.substring(0, 6) + '...' : '(empty)') +
+      ', typeof liff=' +
+      typeof liff;
+    var line = '[' + new Date().toISOString().substr(11, 8) + '] ' + message;
+    try {
+      var history = (localStorage.getItem('kaihi_debug_log') || '') + line + '\n';
+      localStorage.setItem('kaihi_debug_log', history);
+      var p = document.getElementById('debugPanel');
+      if (p) {
+        p.textContent = history;
+        if (DEBUG_MODE) p.classList.remove('hidden');
+      }
+    } catch (e) {
+      // localStorageが使えない場合は無視する
+    }
+  })();
+</script>
+<script>
   const API_BASE = 'https://script.google.com/macros/s/AKfycbzPU8Hxi_m26sx_QqzV8Ovyv0Y0rwRqsPeRVIb2n1s4DA2i-I9t_f6Ak9peokiGzMkoLw/exec';
 
   let lineUserId = null;
 
+  // google.script.run はLINEアプリ内ブラウザで機能しないことがあるため、
+  // 現在のページURL(クエリのみ差し替え)への fetch() で doGet 経由のJSON APIを呼ぶ。
   function callApi(action, params) {
     const query = Object.assign({ action: action }, params || {});
     const qs = Object.keys(query)
@@ -200,13 +342,31 @@
     return (amount < 0 ? '-' : '') + Math.abs(amount).toLocaleString() + '円';
   }
 
+  function setBalanceLoading() {
+    const approvedEl = document.getElementById('approvedBalance');
+    approvedEl.textContent = '読み込み中...';
+    approvedEl.classList.remove('negative');
+    approvedEl.classList.add('loading-text');
+
+    const pendingEl = document.getElementById('pendingAmount');
+    pendingEl.textContent = '読み込み中...';
+    pendingEl.classList.add('loading-text');
+  }
+
   function renderBalance(balance) {
     const approvedEl = document.getElementById('approvedBalance');
+    approvedEl.classList.remove('loading-text');
     approvedEl.textContent = formatYen(balance.approvedBalance);
     approvedEl.classList.toggle('negative', balance.approvedBalance < 0);
 
     const pendingEl = document.getElementById('pendingAmount');
+    pendingEl.classList.remove('loading-text');
     pendingEl.textContent = balance.pendingAmount > 0 ? '+' + formatYen(balance.pendingAmount) : '-';
+  }
+
+  function setHistoryLoading() {
+    const list = document.getElementById('historyList');
+    list.innerHTML = '<li class="loading-item"><span class="spinner"></span>読み込み中...</li>';
   }
 
   function renderHistory(history) {
@@ -246,7 +406,7 @@
         deleteBtn.type = 'button';
         deleteBtn.className = 'secondary';
         deleteBtn.textContent = '削除';
-        deleteBtn.onclick = () => onDeleteCharge(item.transactionId);
+        deleteBtn.onclick = (e) => onDeleteCharge(item.transactionId, e.currentTarget);
         right.appendChild(deleteBtn);
       }
       li.appendChild(right);
@@ -255,15 +415,85 @@
   }
 
   function loadBalanceAndHistory() {
-    callApi('getMyBalance', { lineUserId: lineUserId }).then(renderBalance).catch((err) => showError(err.message));
-    callApi('getMyHistory', { lineUserId: lineUserId }).then(renderHistory).catch((err) => showError(err.message));
+    setBalanceLoading();
+    setHistoryLoading();
+    const reloadBtn = document.getElementById('reloadBtn');
+    if (reloadBtn) {
+      reloadBtn.disabled = true;
+      reloadBtn.classList.add('spinning');
+    }
+    const balancePromise = callApi('getMyBalance', { lineUserId: lineUserId })
+      .then(renderBalance)
+      .catch((err) => {
+        document.getElementById('approvedBalance').classList.remove('loading-text');
+        document.getElementById('pendingAmount').classList.remove('loading-text');
+        showError(err.message);
+      });
+    const historyPromise = callApi('getMyHistory', { lineUserId: lineUserId })
+      .then(renderHistory)
+      .catch((err) => {
+        document.getElementById('historyList').innerHTML = '<li class="empty">読み込みに失敗しました</li>';
+        showError(err.message);
+      });
+    Promise.all([balancePromise, historyPromise]).then(() => {
+      if (reloadBtn) {
+        reloadBtn.disabled = false;
+        reloadBtn.classList.remove('spinning');
+      }
+    });
   }
 
-  function onDeleteCharge(transactionId) {
-    if (!confirm('この履歴を削除しますか?')) return;
-    callApi('deleteCharge', { lineUserId: lineUserId, transactionId: transactionId })
-      .then(() => loadBalanceAndHistory())
-      .catch((err) => showError(err.message));
+  function initReloadButton() {
+    const reloadBtn = document.getElementById('reloadBtn');
+    if (!reloadBtn) return;
+    reloadBtn.addEventListener('click', () => {
+      clearError();
+      loadBalanceAndHistory();
+    });
+  }
+
+  // window.confirm()はLINEアプリ内ブラウザ等でページのオリジンをダイアログに表示してしまうため、
+  // オリジンが表示されないページ内蔵のモーダルで代替する。
+  function showConfirmModal(message) {
+    return new Promise((resolve) => {
+      const overlay = document.getElementById('confirmModal');
+      const messageEl = document.getElementById('confirmMessage');
+      const okBtn = document.getElementById('confirmOkBtn');
+      const cancelBtn = document.getElementById('confirmCancelBtn');
+      messageEl.textContent = message;
+      overlay.classList.remove('hidden');
+
+      function cleanup(result) {
+        overlay.classList.add('hidden');
+        okBtn.removeEventListener('click', onOk);
+        cancelBtn.removeEventListener('click', onCancel);
+        resolve(result);
+      }
+      function onOk() { cleanup(true); }
+      function onCancel() { cleanup(false); }
+      okBtn.addEventListener('click', onOk);
+      cancelBtn.addEventListener('click', onCancel);
+    });
+  }
+
+  function onDeleteCharge(transactionId, btn) {
+    showConfirmModal('この履歴を削除しますか?').then((confirmed) => {
+      if (!confirmed) return;
+      const originalText = btn ? btn.textContent : null;
+      if (btn) {
+        btn.disabled = true;
+        btn.textContent = '削除中...';
+      }
+      return callApi('deleteCharge', { lineUserId: lineUserId, transactionId: transactionId })
+        .then(() => loadBalanceAndHistory())
+        .catch((err) => {
+          if (btn) {
+            btn.disabled = false;
+            btn.textContent = originalText;
+          }
+          showError(err.message);
+        });
+    });
   }
 
   function initChargeForm() {
@@ -275,23 +505,29 @@
       const targetDate = document.getElementById('targetDate').value;
       const memo = document.getElementById('memo').value;
       const submitBtn = e.target.querySelector('button[type="submit"]');
+      const originalText = submitBtn.textContent;
       submitBtn.disabled = true;
+      submitBtn.textContent = '登録中...';
 
       callApi('registerCharge', { lineUserId: lineUserId, amount: amount, targetDate: targetDate, memo: memo })
         .then(() => {
           submitBtn.disabled = false;
+          submitBtn.textContent = originalText;
           document.getElementById('chargeForm').reset();
           document.getElementById('targetDate').valueAsDate = new Date();
           loadBalanceAndHistory();
         })
         .catch((err) => {
           submitBtn.disabled = false;
+          submitBtn.textContent = originalText;
           showError(err.message);
         });
     });
   }
 
   // devtoolsが使えない環境(LINEアプリ内ブラウザ)向けの診断ログ。
+  // liff.login()等によるページ再読み込みをまたいでも履歴が残るよう localStorage に蓄積し、
+  // 起動のたびに全履歴を表示し直す(=リロードループが起きていれば繰り返しパターンとして見える)。
   const DEBUG_LOG_KEY = 'kaihi_debug_log';
 
   function renderDebugLog_() {
@@ -301,6 +537,9 @@
       panel.textContent = localStorage.getItem(DEBUG_LOG_KEY) || '';
     } catch (e) {
       // localStorageが使えない場合は何もしない
+    }
+    if (typeof DEBUG_MODE !== 'undefined' && DEBUG_MODE) {
+      panel.classList.remove('hidden');
     }
   }
 
@@ -319,17 +558,10 @@
     renderDebugLog_();
   }
 
-  if (location.search.indexOf('resetlog=1') !== -1) {
-    try {
-      localStorage.removeItem(DEBUG_LOG_KEY);
-    } catch (e) {
-      // 無視
-    }
-  }
   renderDebugLog_();
 
   function boot() {
-    debugLog('boot start, typeof liff=' + typeof liff);
+    debugLog('boot start');
     liff
       .init({ liffId: LIFF_ID })
       .then(() => {
@@ -353,6 +585,7 @@
         document.getElementById('loading').classList.add('hidden');
         document.getElementById('app').classList.remove('hidden');
         initChargeForm();
+        initReloadButton();
         loadBalanceAndHistory();
         debugLog('UI shown');
       })
@@ -366,6 +599,7 @@
   try {
     boot();
   } catch (err) {
+    // liff未定義など、Promiseチェーンに乗る前の同期エラーもここで画面に表示する
     const message = err && err.message ? err.message : String(err);
     debugLog('synchronous error before promise chain: ' + message);
     document.getElementById('loading').textContent = '初期化エラー: ' + message;
