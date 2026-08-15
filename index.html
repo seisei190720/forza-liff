@@ -396,10 +396,19 @@
       li.appendChild(main);
 
       const right = document.createElement('div');
-      const statusEl = document.createElement('span');
-      statusEl.className = 'history-status ' + (item.status === 'approved' ? 'approved' : '');
-      statusEl.textContent = item.status === 'approved' ? '承認済み' : '承認待ち';
-      right.appendChild(statusEl);
+      if (item.type === 'collection') {
+        if (item.title) {
+          const titleEl = document.createElement('span');
+          titleEl.className = 'history-status approved';
+          titleEl.textContent = item.title;
+          right.appendChild(titleEl);
+        }
+      } else {
+        const statusEl = document.createElement('span');
+        statusEl.className = 'history-status ' + (item.status === 'approved' ? 'approved' : '');
+        statusEl.textContent = item.status === 'approved' ? '承認済み' : '承認待ち';
+        right.appendChild(statusEl);
+      }
 
       if (item.type === 'charge' && item.status === 'pending') {
         const deleteBtn = document.createElement('button');
