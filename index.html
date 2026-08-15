@@ -122,13 +122,8 @@
     align-items: baseline;
     padding: 4px 0;
   }
-  .balance-row.sub {
-    color: #888;
-    font-size: 13px;
-  }
   .balance-label { font-size: 14px; }
   .balance-value { font-size: 22px; font-weight: 600; }
-  .balance-row.sub .balance-value { font-size: 15px; font-weight: 500; }
   .balance-value.negative { color: #d32f2f; }
 
   form { display: flex; flex-direction: column; gap: 10px; }
@@ -296,10 +291,6 @@
           <span class="balance-label">チャージ残高</span>
           <span id="approvedBalance" class="balance-value">-</span>
         </div>
-        <div class="balance-row sub">
-          <span class="balance-label">承認待ち</span>
-          <span id="pendingAmount" class="balance-value">-</span>
-        </div>
       </section>
 
       <section class="card">
@@ -410,21 +401,15 @@
     approvedEl.textContent = '読み込み中...';
     approvedEl.classList.remove('negative');
     approvedEl.classList.add('loading-text');
-
-    const pendingEl = document.getElementById('pendingAmount');
-    pendingEl.textContent = '読み込み中...';
-    pendingEl.classList.add('loading-text');
   }
 
+  // 承認待ちのチャージも入金済みとして扱うため、承認済み残高に承認待ち額を加えた合計を表示する。
   function renderBalance(balance) {
+    const totalBalance = balance.approvedBalance + balance.pendingAmount;
     const approvedEl = document.getElementById('approvedBalance');
     approvedEl.classList.remove('loading-text');
-    approvedEl.textContent = formatYen(balance.approvedBalance);
-    approvedEl.classList.toggle('negative', balance.approvedBalance < 0);
-
-    const pendingEl = document.getElementById('pendingAmount');
-    pendingEl.classList.remove('loading-text');
-    pendingEl.textContent = balance.pendingAmount > 0 ? '+' + formatYen(balance.pendingAmount) : '-';
+    approvedEl.textContent = formatYen(totalBalance);
+    approvedEl.classList.toggle('negative', totalBalance < 0);
   }
 
   function setHistoryLoading() {
@@ -459,7 +444,7 @@
       li.appendChild(main);
 
       const right = document.createElement('div');
-      if (item.type === 'collection') {
+      if (item.type === '徴収') {
         if (item.title) {
           const titleEl = document.createElement('span');
           titleEl.className = 'history-title';
@@ -473,7 +458,7 @@
         right.appendChild(statusEl);
       }
 
-      if (item.type === 'charge' && item.status === '承認待ち') {
+      if (item.type === 'チャージ' && item.status === '承認待ち') {
         const deleteBtn = document.createElement('button');
         deleteBtn.type = 'button';
         deleteBtn.className = 'secondary';
@@ -498,7 +483,6 @@
       .then(renderBalance)
       .catch((err) => {
         document.getElementById('approvedBalance').classList.remove('loading-text');
-        document.getElementById('pendingAmount').classList.remove('loading-text');
         showError(err.message);
       });
     const historyPromise = callApi('getMyHistory', { lineUserId: lineUserId })
