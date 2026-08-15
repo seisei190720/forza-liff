@@ -468,12 +468,12 @@
         }
       } else {
         const statusEl = document.createElement('span');
-        statusEl.className = 'history-status ' + (item.status === 'approved' ? 'approved' : '');
-        statusEl.textContent = item.status === 'approved' ? '承認済み' : '承認待ち';
+        statusEl.className = 'history-status ' + (item.status === '承認済み' ? 'approved' : '');
+        statusEl.textContent = item.status;
         right.appendChild(statusEl);
       }
 
-      if (item.type === 'charge' && item.status === 'pending') {
+      if (item.type === 'charge' && item.status === '承認待ち') {
         const deleteBtn = document.createElement('button');
         deleteBtn.type = 'button';
         deleteBtn.className = 'secondary';
