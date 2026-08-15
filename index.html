@@ -56,6 +56,21 @@
     font-size: 13px;
     padding: 16px 0;
   }
+  .app-title {
+    text-align: center;
+    margin-bottom: 16px;
+  }
+  .app-title-main {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 700;
+    color: #06c755;
+  }
+  .app-title-sub {
+    margin: 2px 0 0;
+    font-size: 12px;
+    color: #888;
+  }
   header {
     display: flex;
     align-items: center;
@@ -183,6 +198,11 @@
     margin-left: 6px;
   }
   .history-status.approved { background: #06c755; }
+  .history-title {
+    font-size: 12px;
+    color: #666;
+    margin-left: 6px;
+  }
   .empty { color: #999; font-size: 13px; text-align: center; padding: 12px 0; }
 
   .modal-overlay {
@@ -231,6 +251,11 @@
 <pre id="debugPanel" class="hidden" style="white-space:pre-wrap;font-size:11px;color:#555;background:#eee;padding:8px;border-radius:6px;margin-top:8px;"></pre>
 
 <div id="app" class="hidden">
+  <div class="app-title">
+    <p class="app-title-main">Forza名古屋</p>
+    <p class="app-title-sub">~君の会費がチームを強くする~</p>
+  </div>
+
   <header>
     <h1 id="memberName"></h1>
     <button id="reloadBtn" type="button" class="icon-button" title="更新" aria-label="更新">⟳</button>
@@ -399,7 +424,7 @@
       if (item.type === 'collection') {
         if (item.title) {
           const titleEl = document.createElement('span');
-          titleEl.className = 'history-status approved';
+          titleEl.className = 'history-title';
           titleEl.textContent = item.title;
           right.appendChild(titleEl);
         }
