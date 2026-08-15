@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>会費管理</title>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+  :root {
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", sans-serif;
+    background: #f5f5f7;
+    color: #1c1c1e;
+    padding: 16px;
+  }
+  .hidden { display: none !important; }
+  #loading {
+    text-align: center;
+    padding: 40px 0;
+    color: #666;
+  }
+  header h1 {
+    font-size: 18px;
+    margin: 0 0 12px;
+  }
+  .card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+  .card h2 {
+    font-size: 15px;
+    margin: 0 0 12px;
+    color: #444;
+  }
+  .balance-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 4px 0;
+  }
+  .balance-row.sub {
+    color: #888;
+    font-size: 13px;
+  }
+  .balance-label { font-size: 14px; }
+  .balance-value { font-size: 22px; font-weight: 600; }
+  .balance-row.sub .balance-value { font-size: 15px; font-weight: 500; }
+  .balance-value.negative { color: #d32f2f; }
+
+  form { display: flex; flex-direction: column; gap: 10px; }
+  label {
+    display: flex;
+    flex-direction: column;
+    font-size: 13px;
+    color: #555;
+    gap: 4px;
+  }
+  input {
+    font-size: 16px;
+    padding: 8px 10px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+  }
+  button {
+    margin-top: 4px;
+    padding: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    color: #fff;
+    background: #06c755;
+    border: none;
+    border-radius: 8px;
+  }
+  button:disabled { opacity: 0.5; }
+  button.secondary {
+    background: none;
+    color: #d32f2f;
+    padding: 4px 8px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .error {
+    color: #d32f2f;
+    font-size: 13px;
+    margin: 8px 0 0;
+  }
+
+  .history-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .history-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 8px;
+  }
+  .history-main { display: flex; flex-direction: column; }
+  .history-date { font-size: 12px; color: #999; }
+  .history-amount.positive { color: #06c755; }
+  .history-amount.negative { color: #d32f2f; }
+  .history-status {
+    font-size: 11px;
+    color: #fff;
+    background: #bbb;
+    border-radius: 4px;
+    padding: 2px 6px;
+    margin-left: 6px;
+  }
+  .history-status.approved { background: #06c755; }
+  .empty { color: #999; font-size: 13px; text-align: center; padding: 12px 0; }
+</style>
+</head>
+<body>
+
+<div id="loading">読み込み中...</div>
+<pre id="debugPanel" style="white-space:pre-wrap;font-size:11px;color:#555;background:#eee;padding:8px;border-radius:6px;margin-top:8px;"></pre>
+
+<div id="app" class="hidden">
+  <header>
+    <h1 id="memberName"></h1>
+  </header>
+
+  <section class="card">
+    <div class="balance-row">
+      <span class="balance-label">承認済み残高</span>
+      <span id="approvedBalance" class="balance-value">-</span>
+    </div>
+    <div class="balance-row sub">
+      <span class="balance-label">承認待ち</span>
+      <span id="pendingAmount" class="balance-value">-</span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>チャージ登録</h2>
+    <form id="chargeForm">
+      <label>金額(円)<input type="number" id="amount" min="1" step="1" required></label>
+      <label>振込日<input type="date" id="targetDate" required></label>
+      <label>メモ(任意)<input type="text" id="memo" maxlength="100"></label>
+      <button type="submit">登録する</button>
+    </form>
+    <p id="formError" class="error hidden"></p>
+  </section>
+
+  <section class="card">
+    <h2>履歴</h2>
+    <ul id="historyList" class="history-list"></ul>
+  </section>
+</div>
+
+<script>
+  // GASはHTMLをGoogle独自のサンドボックスiframe経由でしか配信できず、
+  // LIFFが内部で行うトップレベル遷移がそのサンドボックスに阻まれて liff.init() が
+  // 完了しない(読み込み中のまま固まる)ため、画面(このファイル)はGitHub Pagesなど
+  // GAS外の静的ホスティングに置き、GASはJSON API(?action=...)専用として使う。
+  const LIFF_ID = '2011040592-nyeLFIAW';
+  const API_BASE = 'https://script.google.com/macros/s/AKfycbzPU8Hxi_m26sx_QqzV8Ovyv0Y0rwRqsPeRVIb2n1s4DA2i-I9t_f6Ak9peokiGzMkoLw/exec';
+
+  let lineUserId = null;
+
+  function callApi(action, params) {
+    const query = Object.assign({ action: action }, params || {});
+    const qs = Object.keys(query)
+      .map((key) => encodeURIComponent(key) + '=' + encodeURIComponent(query[key] == null ? '' : query[key]))
+      .join('&');
+    return fetch(API_BASE + '?' + qs)
+      .then((res) => res.json())
+      .then((data) => {
+        if (!data.ok) throw new Error(data.error || 'エラーが発生しました');
+        return data.result;
+      });
+  }
+
+  function showError(message) {
+    const el = document.getElementById('formError');
+    el.textContent = message;
+    el.classList.remove('hidden');
+  }
+
+  function clearError() {
+    const el = document.getElementById('formError');
+    el.classList.add('hidden');
+    el.textContent = '';
+  }
+
+  function formatYen(amount) {
+    return (amount < 0 ? '-' : '') + Math.abs(amount).toLocaleString() + '円';
+  }
+
+  function renderBalance(balance) {
+    const approvedEl = document.getElementById('approvedBalance');
+    approvedEl.textContent = formatYen(balance.approvedBalance);
+    approvedEl.classList.toggle('negative', balance.approvedBalance < 0);
+
+    const pendingEl = document.getElementById('pendingAmount');
+    pendingEl.textContent = balance.pendingAmount > 0 ? '+' + formatYen(balance.pendingAmount) : '-';
+  }
+
+  function renderHistory(history) {
+    const list = document.getElementById('historyList');
+    list.innerHTML = '';
+    if (history.length === 0) {
+      list.innerHTML = '<li class="empty">履歴はありません</li>';
+      return;
+    }
+    history.forEach((item) => {
+      const li = document.createElement('li');
+      li.className = 'history-item';
+
+      const main = document.createElement('div');
+      main.className = 'history-main';
+
+      const amountEl = document.createElement('span');
+      amountEl.className = 'history-amount ' + (item.amount >= 0 ? 'positive' : 'negative');
+      amountEl.textContent = formatYen(item.amount) + (item.memo ? '(' + item.memo + ')' : '');
+
+      const dateEl = document.createElement('span');
+      dateEl.className = 'history-date';
+      dateEl.textContent = item.targetDate;
+
+      main.appendChild(amountEl);
+      main.appendChild(dateEl);
+      li.appendChild(main);
+
+      const right = document.createElement('div');
+      const statusEl = document.createElement('span');
+      statusEl.className = 'history-status ' + (item.status === 'approved' ? 'approved' : '');
+      statusEl.textContent = item.status === 'approved' ? '承認済み' : '承認待ち';
+      right.appendChild(statusEl);
+
+      if (item.type === 'charge' && item.status === 'pending') {
+        const deleteBtn = document.createElement('button');
+        deleteBtn.type = 'button';
+        deleteBtn.className = 'secondary';
+        deleteBtn.textContent = '削除';
+        deleteBtn.onclick = () => onDeleteCharge(item.transactionId);
+        right.appendChild(deleteBtn);
+      }
+      li.appendChild(right);
+      list.appendChild(li);
+    });
+  }
+
+  function loadBalanceAndHistory() {
+    callApi('getMyBalance', { lineUserId: lineUserId }).then(renderBalance).catch((err) => showError(err.message));
+    callApi('getMyHistory', { lineUserId: lineUserId }).then(renderHistory).catch((err) => showError(err.message));
+  }
+
+  function onDeleteCharge(transactionId) {
+    if (!confirm('この履歴を削除しますか?')) return;
+    callApi('deleteCharge', { lineUserId: lineUserId, transactionId: transactionId })
+      .then(() => loadBalanceAndHistory())
+      .catch((err) => showError(err.message));
+  }
+
+  function initChargeForm() {
+    document.getElementById('targetDate').valueAsDate = new Date();
+    document.getElementById('chargeForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      clearError();
+      const amount = document.getElementById('amount').value;
+      const targetDate = document.getElementById('targetDate').value;
+      const memo = document.getElementById('memo').value;
+      const submitBtn = e.target.querySelector('button[type="submit"]');
+      submitBtn.disabled = true;
+
+      callApi('registerCharge', { lineUserId: lineUserId, amount: amount, targetDate: targetDate, memo: memo })
+        .then(() => {
+          submitBtn.disabled = false;
+          document.getElementById('chargeForm').reset();
+          document.getElementById('targetDate').valueAsDate = new Date();
+          loadBalanceAndHistory();
+        })
+        .catch((err) => {
+          submitBtn.disabled = false;
+          showError(err.message);
+        });
+    });
+  }
+
+  // devtoolsが使えない環境(LINEアプリ内ブラウザ)向けの診断ログ。
+  const DEBUG_LOG_KEY = 'kaihi_debug_log';
+
+  function renderDebugLog_() {
+    const panel = document.getElementById('debugPanel');
+    if (!panel) return;
+    try {
+      panel.textContent = localStorage.getItem(DEBUG_LOG_KEY) || '';
+    } catch (e) {
+      // localStorageが使えない場合は何もしない
+    }
+  }
+
+  function debugLog(message) {
+    const time = new Date().toISOString().substr(11, 8);
+    const line = '[' + time + '] ' + message;
+    try {
+      let history = localStorage.getItem(DEBUG_LOG_KEY) || '';
+      history += line + '\n';
+      const lines = history.split('\n');
+      if (lines.length > 200) history = lines.slice(lines.length - 200).join('\n');
+      localStorage.setItem(DEBUG_LOG_KEY, history);
+    } catch (e) {
+      // localStorageが使えない場合は無視する
+    }
+    renderDebugLog_();
+  }
+
+  if (location.search.indexOf('resetlog=1') !== -1) {
+    try {
+      localStorage.removeItem(DEBUG_LOG_KEY);
+    } catch (e) {
+      // 無視
+    }
+  }
+  renderDebugLog_();
+
+  function boot() {
+    debugLog('boot start, typeof liff=' + typeof liff);
+    liff
+      .init({ liffId: LIFF_ID })
+      .then(() => {
+        debugLog('liff.init resolved, isLoggedIn=' + liff.isLoggedIn());
+        if (!liff.isLoggedIn()) {
+          liff.login();
+          return;
+        }
+        return liff.getProfile();
+      })
+      .then((profile) => {
+        debugLog('getProfile resolved, profile=' + (profile ? 'has profile' : 'undefined'));
+        if (!profile) return;
+        lineUserId = profile.userId;
+        return callApi('resolveMember', { lineUserId: lineUserId });
+      })
+      .then((member) => {
+        debugLog('resolveMember resolved, member=' + (member ? member.name : 'undefined'));
+        if (!member) return;
+        document.getElementById('memberName').textContent = member.name + ' さん';
+        document.getElementById('loading').classList.add('hidden');
+        document.getElementById('app').classList.remove('hidden');
+        initChargeForm();
+        loadBalanceAndHistory();
+        debugLog('UI shown');
+      })
+      .catch((err) => {
+        const message = err && err.message ? err.message : String(err);
+        debugLog('boot() caught error: ' + message);
+        document.getElementById('loading').textContent = 'エラーが発生しました: ' + message;
+      });
+  }
+
+  try {
+    boot();
+  } catch (err) {
+    const message = err && err.message ? err.message : String(err);
+    debugLog('synchronous error before promise chain: ' + message);
+    document.getElementById('loading').textContent = '初期化エラー: ' + message;
+  }
+
+  setTimeout(() => {
+    const app = document.getElementById('app');
+    if (app && app.classList.contains('hidden')) {
+      debugLog('STILL LOADING after 8s (watchdog)');
+    }
+  }, 8000);
+</script>
+</body>
+</html>
