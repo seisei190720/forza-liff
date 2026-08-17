@@ -228,6 +228,7 @@
     margin: 0 0 16px;
     font-size: 14px;
     color: #1c1c1e;
+    white-space: pre-line;
   }
   .modal-actions {
     display: flex;
@@ -510,17 +511,20 @@
 
   // window.confirm()はLINEアプリ内ブラウザ等でページのオリジンをダイアログに表示してしまうため、
   // オリジンが表示されないページ内蔵のモーダルで代替する。
-  function showConfirmModal(message) {
+  function showConfirmModal(message, okLabel) {
     return new Promise((resolve) => {
       const overlay = document.getElementById('confirmModal');
       const messageEl = document.getElementById('confirmMessage');
       const okBtn = document.getElementById('confirmOkBtn');
       const cancelBtn = document.getElementById('confirmCancelBtn');
+      const originalOkLabel = okBtn.textContent;
       messageEl.textContent = message;
+      okBtn.textContent = okLabel || originalOkLabel;
       overlay.classList.remove('hidden');
 
       function cleanup(result) {
         overlay.classList.add('hidden');
+        okBtn.textContent = originalOkLabel;
         okBtn.removeEventListener('click', onOk);
         cancelBtn.removeEventListener('click', onCancel);
         resolve(result);
@@ -552,32 +556,45 @@
     });
   }
 
+  // date型inputのvalueAsDateはUTC基準で解釈されるため、端末のタイムゾーンによっては
+  // (特に日本時間の深夜0時台〜8時台に)前日の日付がセットされてしまう。
+  // そのため日本時間の日付文字列を直接組み立ててvalueにセットする。
+  function getJstDateString() {
+    const jstMs = Date.now() + 9 * 60 * 60 * 1000;
+    return new Date(jstMs).toISOString().slice(0, 10);
+  }
+
   function initChargeForm() {
-    document.getElementById('targetDate').valueAsDate = new Date();
+    document.getElementById('targetDate').value = getJstDateString();
     document.getElementById('chargeForm').addEventListener('submit', (e) => {
       e.preventDefault();
       clearError();
-      const amount = document.getElementById('amount').value;
-      const targetDate = document.getElementById('targetDate').value;
-      const memo = document.getElementById('memo').value;
-      const submitBtn = e.target.querySelector('button[type="submit"]');
-      const originalText = submitBtn.textContent;
-      submitBtn.disabled = true;
-      submitBtn.textContent = '登録中...';
 
-      callApi('registerCharge', { lineUserId: lineUserId, amount: amount, targetDate: targetDate, memo: memo })
-        .then(() => {
-          submitBtn.disabled = false;
-          submitBtn.textContent = originalText;
-          document.getElementById('chargeForm').reset();
-          document.getElementById('targetDate').valueAsDate = new Date();
-          loadBalanceAndHistory();
-        })
-        .catch((err) => {
-          submitBtn.disabled = false;
-          submitBtn.textContent = originalText;
-          showError(err.message);
-        });
+      showConfirmModal('振込が完了してからチャージ登録をしてください。\n振込は完了していますか?', '完了しました').then((confirmed) => {
+        if (!confirmed) return;
+
+        const amount = document.getElementById('amount').value;
+        const targetDate = document.getElementById('targetDate').value;
+        const memo = document.getElementById('memo').value;
+        const submitBtn = e.target.querySelector('button[type="submit"]');
+        const originalText = submitBtn.textContent;
+        submitBtn.disabled = true;
+        submitBtn.textContent = '登録中...';
+
+        callApi('registerCharge', { lineUserId: lineUserId, amount: amount, targetDate: targetDate, memo: memo })
+          .then(() => {
+            submitBtn.disabled = false;
+            submitBtn.textContent = originalText;
+            document.getElementById('chargeForm').reset();
+            document.getElementById('targetDate').value = getJstDateString();
+            loadBalanceAndHistory();
+          })
+          .catch((err) => {
+            submitBtn.disabled = false;
+            submitBtn.textContent = originalText;
+            showError(err.message);
+          });
+      });
     });
   }
 
