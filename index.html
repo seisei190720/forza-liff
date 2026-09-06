@@ -143,21 +143,30 @@
     padding: 4px 0;
     margin-bottom: 12px;
   }
+  .filter-section {
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 4px 12px;
+    margin-bottom: 12px;
+  }
   .filter-toggle-button {
+    display: block;
+    width: 100%;
     background: none;
     border: none;
     color: #444;
     font-size: 13px;
     font-weight: 500;
-    padding: 4px 0;
-    margin-bottom: 4px;
+    text-align: left;
+    padding: 8px 0;
+    margin-top: 0;
   }
   .filter-bar {
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
-    margin-top: 8px;
-    margin-bottom: 12px;
+    margin-top: 4px;
+    padding-bottom: 12px;
   }
   .filter-bar label {
     flex: 1 1 130px;
@@ -500,32 +509,34 @@
               + 追加
             </button>
           </div>
-          <button type="button" id="filterToggleBtn" class="filter-toggle-button">
-            フィルター <span id="filterToggleIcon">▾</span>
-          </button>
-          <div class="filter-bar hidden" id="transactionFilterBar">
-            <label
-              >氏名<input type="text" id="filterName" placeholder="氏名で検索"
-            /></label>
-            <label
-              >種類
-              <select id="filterType">
-                <option value="">すべて</option>
-                <option value="チャージ">チャージ</option>
-                <option value="徴収">徴収</option>
-              </select>
-            </label>
-            <label
-              >承認ステータス
-              <select id="filterStatus">
-                <option value="">すべて</option>
-                <option value="承認待ち">承認待ち</option>
-                <option value="承認済み">承認済み</option>
-              </select>
-            </label>
-            <label
-              >登録日時<input type="month" id="filterMonth"
-            /></label>
+          <div class="filter-section">
+            <button type="button" id="filterToggleBtn" class="filter-toggle-button">
+              フィルター <span id="filterToggleIcon">▾</span>
+            </button>
+            <div class="filter-bar hidden" id="transactionFilterBar">
+              <label
+                >氏名<input type="text" id="filterName" placeholder="氏名で検索"
+              /></label>
+              <label
+                >種類
+                <select id="filterType">
+                  <option value="">すべて</option>
+                  <option value="チャージ">チャージ</option>
+                  <option value="徴収">徴収</option>
+                </select>
+              </label>
+              <label
+                >承認ステータス
+                <select id="filterStatus">
+                  <option value="">すべて</option>
+                  <option value="承認待ち">承認待ち</option>
+                  <option value="承認済み">承認済み</option>
+                </select>
+              </label>
+              <label
+                >登録日時<input type="month" id="filterMonth"
+              /></label>
+            </div>
           </div>
           <ul id="adminTransactionList" class="data-list"></ul>
         </section>
@@ -705,13 +716,12 @@
       amountEl.textContent = formatYen(item.amount);
       amountLine.appendChild(amountEl);
 
-      // 振込メモ(チャージ)と徴収タイトル(徴収)は同じスタイルで金額の右側に表示する。
-      const note = item.type === '徴収' ? item.title : item.memo;
-      if (note) {
-        const noteEl = document.createElement('span');
-        noteEl.className = 'history-title';
-        noteEl.textContent = note;
-        amountLine.appendChild(noteEl);
+      // 振込メモは徴収タイトルと同じスタイルで金額の右側に表示する。
+      if (item.type !== '徴収' && item.memo) {
+        const memoEl = document.createElement('span');
+        memoEl.className = 'history-title';
+        memoEl.textContent = item.memo;
+        amountLine.appendChild(memoEl);
       }
 
       const dateEl = document.createElement('span');
@@ -723,10 +733,19 @@
       li.appendChild(main);
 
       const right = document.createElement('div');
-      const statusEl = document.createElement('span');
-      statusEl.className = 'history-status ' + (item.status === '承認済み' ? 'approved' : '');
-      statusEl.textContent = item.status;
-      right.appendChild(statusEl);
+      if (item.type === '徴収') {
+        if (item.title) {
+          const titleEl = document.createElement('span');
+          titleEl.className = 'history-title';
+          titleEl.textContent = item.title;
+          right.appendChild(titleEl);
+        }
+      } else {
+        const statusEl = document.createElement('span');
+        statusEl.className = 'history-status ' + (item.status === '承認済み' ? 'approved' : '');
+        statusEl.textContent = item.status;
+        right.appendChild(statusEl);
+      }
 
       if (item.type === 'チャージ' && item.status === '承認待ち') {
         const deleteBtn = document.createElement('button');
