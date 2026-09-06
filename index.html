@@ -143,10 +143,20 @@
     padding: 4px 0;
     margin-bottom: 12px;
   }
+  .filter-toggle-button {
+    background: none;
+    border: none;
+    color: #444;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 4px 0;
+    margin-bottom: 4px;
+  }
   .filter-bar {
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
+    margin-top: 8px;
     margin-bottom: 12px;
   }
   .filter-bar label {
@@ -240,6 +250,7 @@
   }
   .history-main { display: flex; flex-direction: column; }
   .history-name { font-size: 13px; font-weight: 600; }
+  .history-amount-line { display: flex; align-items: center; }
   .history-date { font-size: 12px; color: #999; }
   .history-amount.positive { color: #06c755; }
   .history-amount.negative { color: #d32f2f; }
@@ -263,6 +274,46 @@
     gap: 4px;
   }
   .empty { color: #999; font-size: 13px; text-align: center; padding: 12px 0; }
+
+  .admin-item { position: relative; padding-right: 26px; }
+  .item-menu { position: absolute; top: 0; right: 0; }
+  .kebab-btn {
+    margin-top: 0;
+    background: none;
+    color: #999;
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1;
+    padding: 2px 6px;
+    border-radius: 6px;
+  }
+  .kebab-btn:hover { color: #444; background: #f0f0f0; }
+  .item-menu-dropdown {
+    position: absolute;
+    top: 26px;
+    right: 0;
+    display: flex;
+    flex-direction: column;
+    min-width: 88px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    overflow: hidden;
+    z-index: 20;
+  }
+  .item-menu-option {
+    margin-top: 0;
+    background: none;
+    color: #1c1c1e;
+    font-size: 13px;
+    font-weight: 500;
+    text-align: left;
+    padding: 8px 12px;
+    border-radius: 0;
+  }
+  .item-menu-option:hover { background: #f5f5f7; }
+  .item-menu-option.delete { color: #d32f2f; }
 
   .data-list {
     list-style: none;
@@ -449,7 +500,10 @@
               + 追加
             </button>
           </div>
-          <div class="filter-bar">
+          <button type="button" id="filterToggleBtn" class="filter-toggle-button">
+            フィルター <span id="filterToggleIcon">▾</span>
+          </button>
+          <div class="filter-bar hidden" id="transactionFilterBar">
             <label
               >氏名<input type="text" id="filterName" placeholder="氏名で検索"
             /></label>
@@ -643,32 +697,36 @@
       const main = document.createElement('div');
       main.className = 'history-main';
 
+      const amountLine = document.createElement('div');
+      amountLine.className = 'history-amount-line';
+
       const amountEl = document.createElement('span');
       amountEl.className = 'history-amount ' + (item.amount >= 0 ? 'positive' : 'negative');
-      amountEl.textContent = formatYen(item.amount) + (item.memo ? '(' + item.memo + ')' : '');
+      amountEl.textContent = formatYen(item.amount);
+      amountLine.appendChild(amountEl);
+
+      // 振込メモ(チャージ)と徴収タイトル(徴収)は同じスタイルで金額の右側に表示する。
+      const note = item.type === '徴収' ? item.title : item.memo;
+      if (note) {
+        const noteEl = document.createElement('span');
+        noteEl.className = 'history-title';
+        noteEl.textContent = note;
+        amountLine.appendChild(noteEl);
+      }
 
       const dateEl = document.createElement('span');
       dateEl.className = 'history-date';
       dateEl.textContent = item.targetDate;
 
-      main.appendChild(amountEl);
+      main.appendChild(amountLine);
       main.appendChild(dateEl);
       li.appendChild(main);
 
       const right = document.createElement('div');
-      if (item.type === '徴収') {
-        if (item.title) {
-          const titleEl = document.createElement('span');
-          titleEl.className = 'history-title';
-          titleEl.textContent = item.title;
-          right.appendChild(titleEl);
-        }
-      } else {
-        const statusEl = document.createElement('span');
-        statusEl.className = 'history-status ' + (item.status === '承認済み' ? 'approved' : '');
-        statusEl.textContent = item.status;
-        right.appendChild(statusEl);
-      }
+      const statusEl = document.createElement('span');
+      statusEl.className = 'history-status ' + (item.status === '承認済み' ? 'approved' : '');
+      statusEl.textContent = item.status;
+      right.appendChild(statusEl);
 
       if (item.type === 'チャージ' && item.status === '承認待ち') {
         const deleteBtn = document.createElement('button');
@@ -810,6 +868,16 @@
     };
   }
 
+  function closeAllItemMenus_() {
+    document.querySelectorAll('.item-menu-dropdown').forEach((el) => el.classList.add('hidden'));
+  }
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.item-menu')) {
+      closeAllItemMenus_();
+    }
+  });
+
   function renderTransactions(transactions) {
     const { name, type, status, month } = getTransactionFilterState_();
     const rows = transactions.filter((t) => {
@@ -829,7 +897,7 @@
 
     rows.forEach((t) => {
       const li = document.createElement('li');
-      li.className = 'history-item';
+      li.className = 'history-item admin-item';
 
       const main = document.createElement('div');
       main.className = 'history-main';
@@ -838,16 +906,29 @@
       nameEl.className = 'history-name';
       nameEl.textContent = t.memberName;
 
+      const amountLine = document.createElement('div');
+      amountLine.className = 'history-amount-line';
+
       const amountEl = document.createElement('span');
       amountEl.className = 'history-amount ' + (t.amount >= 0 ? 'positive' : 'negative');
-      amountEl.textContent = formatYen(t.amount) + (t.memo ? '(' + t.memo + ')' : '');
+      amountEl.textContent = formatYen(t.amount);
+      amountLine.appendChild(amountEl);
+
+      // 振込メモ(チャージ)と徴収タイトル(徴収)は同じスタイルで金額の右側に表示する。
+      const note = t.type === '徴収' ? t.title : t.memo;
+      if (note) {
+        const noteEl = document.createElement('span');
+        noteEl.className = 'history-title';
+        noteEl.textContent = note;
+        amountLine.appendChild(noteEl);
+      }
 
       const dateEl = document.createElement('span');
       dateEl.className = 'history-date';
       dateEl.textContent = t.targetDate + '(登録: ' + t.createdAt + ')';
 
       main.appendChild(nameEl);
-      main.appendChild(amountEl);
+      main.appendChild(amountLine);
       main.appendChild(dateEl);
       li.appendChild(main);
 
@@ -858,29 +939,51 @@
       statusEl.className = 'history-status ' + (t.status === '承認済み' ? 'approved' : '');
       statusEl.textContent = t.status;
       right.appendChild(statusEl);
-
-      if (t.title) {
-        const titleEl = document.createElement('span');
-        titleEl.className = 'history-title';
-        titleEl.textContent = t.title;
-        right.appendChild(titleEl);
-      }
-
-      const editBtn = document.createElement('button');
-      editBtn.type = 'button';
-      editBtn.className = 'secondary';
-      editBtn.textContent = '編集';
-      editBtn.onclick = () => openEditTransactionModal(t);
-      right.appendChild(editBtn);
-
-      const deleteBtn = document.createElement('button');
-      deleteBtn.type = 'button';
-      deleteBtn.className = 'secondary';
-      deleteBtn.textContent = '削除';
-      deleteBtn.onclick = () => onDeleteTransaction(t.transactionId);
-      right.appendChild(deleteBtn);
-
       li.appendChild(right);
+
+      const menuWrap = document.createElement('div');
+      menuWrap.className = 'item-menu';
+
+      const menuBtn = document.createElement('button');
+      menuBtn.type = 'button';
+      menuBtn.className = 'kebab-btn';
+      menuBtn.setAttribute('aria-label', '操作メニュー');
+      menuBtn.textContent = '⋮';
+
+      const dropdown = document.createElement('div');
+      dropdown.className = 'item-menu-dropdown hidden';
+
+      const editOption = document.createElement('button');
+      editOption.type = 'button';
+      editOption.className = 'item-menu-option';
+      editOption.textContent = '編集';
+      editOption.onclick = () => {
+        closeAllItemMenus_();
+        openEditTransactionModal(t);
+      };
+
+      const deleteOption = document.createElement('button');
+      deleteOption.type = 'button';
+      deleteOption.className = 'item-menu-option delete';
+      deleteOption.textContent = '削除';
+      deleteOption.onclick = () => {
+        closeAllItemMenus_();
+        onDeleteTransaction(t.transactionId);
+      };
+
+      menuBtn.onclick = (e) => {
+        e.stopPropagation();
+        const wasHidden = dropdown.classList.contains('hidden');
+        closeAllItemMenus_();
+        if (wasHidden) dropdown.classList.remove('hidden');
+      };
+
+      dropdown.appendChild(editOption);
+      dropdown.appendChild(deleteOption);
+      menuWrap.appendChild(menuBtn);
+      menuWrap.appendChild(dropdown);
+      li.appendChild(menuWrap);
+
       list.appendChild(li);
     });
   }
@@ -1030,6 +1133,12 @@
     document.getElementById('filterType').addEventListener('change', () => renderTransactions(allTransactions));
     document.getElementById('filterStatus').addEventListener('change', () => renderTransactions(allTransactions));
     document.getElementById('filterMonth').addEventListener('change', () => renderTransactions(allTransactions));
+    document.getElementById('filterToggleBtn').addEventListener('click', () => {
+      const bar = document.getElementById('transactionFilterBar');
+      const icon = document.getElementById('filterToggleIcon');
+      const nowHidden = bar.classList.toggle('hidden');
+      icon.textContent = nowHidden ? '▾' : '▴';
+    });
     initTransactionForm();
   }
 
