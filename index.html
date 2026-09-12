@@ -128,6 +128,7 @@
     margin-bottom: 12px;
   }
   .section-header h2 { margin: 0; }
+  .section-header-actions { display: flex; gap: 8px; }
   .small-button {
     margin-top: 0;
     width: auto;
@@ -377,6 +378,17 @@
     font-size: 16px;
     margin: 0 0 14px;
   }
+  .bulk-approve-select-all {
+    border-bottom: 1px solid #eee;
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+  }
+  .bulk-approve-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .bulk-approve-row .history-main { flex: 1; }
   .modal-actions {
     display: flex;
     justify-content: flex-end;
@@ -505,9 +517,14 @@
         <section class="card">
           <div class="section-header">
             <h2>入出金履歴</h2>
-            <button type="button" id="addTransactionBtn" class="small-button">
-              + 追加
-            </button>
+            <div class="section-header-actions">
+              <button type="button" id="bulkApproveBtn" class="small-button secondary">
+                一括承認
+              </button>
+              <button type="button" id="addTransactionBtn" class="small-button">
+                + 追加
+              </button>
+            </div>
           </div>
           <div class="filter-section">
             <button type="button" id="filterToggleBtn" class="filter-toggle-button">
@@ -583,6 +600,25 @@
             <button type="submit" id="transactionFormSubmitBtn">保存する</button>
           </div>
         </form>
+      </div>
+    </div>
+
+    <div id="bulkApproveModal" class="modal-overlay hidden">
+      <div class="modal-box wide">
+        <h2>一括承認</h2>
+        <label class="checkbox-label bulk-approve-select-all">
+          <input type="checkbox" id="bulkApproveSelectAllCheckbox" />すべて選択
+        </label>
+        <ul id="bulkApproveList" class="data-list"></ul>
+        <p id="bulkApproveError" class="error hidden"></p>
+        <div class="modal-actions">
+          <button type="button" id="bulkApproveCancelBtn" class="secondary">
+            キャンセル
+          </button>
+          <button type="button" id="bulkApproveSubmitBtn" disabled>
+            一括承認
+          </button>
+        </div>
       </div>
     </div>
 
@@ -1143,6 +1179,123 @@
     });
   }
 
+  function closeBulkApproveModal() {
+    document.getElementById('bulkApproveModal').classList.add('hidden');
+  }
+
+  function updateBulkApproveSubmitState_() {
+    const checked = document.querySelectorAll('#bulkApproveList input[type="checkbox"]:checked');
+    document.getElementById('bulkApproveSubmitBtn').disabled = checked.length === 0;
+  }
+
+  function renderBulkApproveList_(rows) {
+    const list = document.getElementById('bulkApproveList');
+    list.innerHTML = '';
+    document.getElementById('bulkApproveSelectAllCheckbox').checked = false;
+    if (rows.length === 0) {
+      list.innerHTML = '<li class="empty">承認待ちの履歴はありません</li>';
+      return;
+    }
+    rows.forEach((t) => {
+      const li = document.createElement('li');
+      li.className = 'history-item bulk-approve-row';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.value = t.transactionId;
+      checkbox.addEventListener('change', updateBulkApproveSubmitState_);
+
+      const main = document.createElement('div');
+      main.className = 'history-main';
+
+      const nameEl = document.createElement('span');
+      nameEl.className = 'history-name';
+      nameEl.textContent = t.memberName;
+
+      const amountLine = document.createElement('div');
+      amountLine.className = 'history-amount-line';
+
+      const amountEl = document.createElement('span');
+      amountEl.className = 'history-amount ' + (t.amount >= 0 ? 'positive' : 'negative');
+      amountEl.textContent = formatYen(t.amount);
+      amountLine.appendChild(amountEl);
+
+      const note = t.type === '徴収' ? t.title : t.memo;
+      if (note) {
+        const noteEl = document.createElement('span');
+        noteEl.className = 'history-title';
+        noteEl.textContent = note;
+        amountLine.appendChild(noteEl);
+      }
+
+      const dateEl = document.createElement('span');
+      dateEl.className = 'history-date';
+      dateEl.textContent = t.targetDate;
+
+      main.appendChild(nameEl);
+      main.appendChild(amountLine);
+      main.appendChild(dateEl);
+
+      li.appendChild(checkbox);
+      li.appendChild(main);
+      list.appendChild(li);
+    });
+  }
+
+  function openBulkApproveModal() {
+    const pending = allTransactions.filter((t) => t.status === '承認待ち');
+    renderBulkApproveList_(pending);
+    document.getElementById('bulkApproveError').classList.add('hidden');
+    updateBulkApproveSubmitState_();
+    document.getElementById('bulkApproveModal').classList.remove('hidden');
+  }
+
+  function initBulkApprove() {
+    document.getElementById('bulkApproveBtn').addEventListener('click', openBulkApproveModal);
+    document.getElementById('bulkApproveCancelBtn').addEventListener('click', closeBulkApproveModal);
+    document.getElementById('bulkApproveSelectAllCheckbox').addEventListener('change', (e) => {
+      const checked = e.target.checked;
+      document.querySelectorAll('#bulkApproveList input[type="checkbox"]').forEach((cb) => {
+        cb.checked = checked;
+      });
+      updateBulkApproveSubmitState_();
+    });
+    document.getElementById('bulkApproveSubmitBtn').addEventListener('click', () => {
+      const transactionIds = Array.from(
+        document.querySelectorAll('#bulkApproveList input[type="checkbox"]:checked')
+      ).map((cb) => cb.value);
+      if (transactionIds.length === 0) return;
+
+      const errorEl = document.getElementById('bulkApproveError');
+      errorEl.classList.add('hidden');
+      const submitBtn = document.getElementById('bulkApproveSubmitBtn');
+      const originalText = submitBtn.textContent;
+      submitBtn.disabled = true;
+      submitBtn.textContent = '承認中...';
+
+      callApi('adminBulkApproveTransactions', {
+        lineUserId: lineUserId,
+        transactionIds: transactionIds.join(','),
+      })
+        .then(() => {
+          closeBulkApproveModal();
+          loadAdminData();
+        })
+        .catch((err) => {
+          errorEl.textContent = err.message;
+          errorEl.classList.remove('hidden');
+          submitBtn.textContent = originalText;
+          callApi('adminGetTransactions', { lineUserId: lineUserId }).then((transactions) => {
+            allTransactions = transactions;
+            renderTransactions(allTransactions);
+            const pending = allTransactions.filter((t) => t.status === '承認待ち');
+            renderBulkApproveList_(pending);
+            updateBulkApproveSubmitState_();
+          });
+        });
+    });
+  }
+
   function initAdminUI() {
     document.getElementById('adminNavBtn').addEventListener('click', switchToAdminView);
     document.getElementById('backToMemberBtn').addEventListener('click', switchToMemberView);
@@ -1159,6 +1312,7 @@
       icon.textContent = nowHidden ? '▾' : '▴';
     });
     initTransactionForm();
+    initBulkApprove();
   }
 
   // window.confirm()はLINEアプリ内ブラウザ等でページのオリジンをダイアログに表示してしまうため、
